@@ -1,0 +1,9 @@
+{
+  "version": "1.2.0",
+  "release_url": "https://github.com/Jiaozi06/preternatural_tool/releases/tag/v1.2.0",
+  "changelog": [
+    "新增 GitHub 官方源与 gh-proxy.com 镜像源在线检查更新。",
+    "更新日志改为从仓库 update.json 在线获取。",
+    "左右飞改为共用 A/D 基础时长，随机延迟逐次独立抽取，并支持按起飞时长分段调整。"
+  ]
+}
