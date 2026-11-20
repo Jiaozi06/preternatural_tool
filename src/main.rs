@@ -31,7 +31,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 
 const ACCENT: Color32 = Color32::from_rgb(0, 95, 184);
 const WINDOW_TITLE: &str = "绿玩变异工具箱 v1.3 ©️Jiaozi";
-const CURRENT_VERSION: &str = "1.3.3";
+const CURRENT_VERSION: &str = "1.3.4";
 const MUTED: Color32 = Color32::from_rgb(82, 86, 94);
 const FIELD_WIDTH: f32 = 136.0;
 const FIELD_HEIGHT: f32 = 28.0;

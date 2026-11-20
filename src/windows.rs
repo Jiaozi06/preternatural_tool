@@ -186,6 +186,9 @@ static SPACE_DOWN: AtomicUsize = AtomicUsize::new(0);
 static LEFT_PRESSED: AtomicBool = AtomicBool::new(false);
 static LEFT_DOWN: AtomicBool = AtomicBool::new(false);
 const OWN_INPUT: usize = 0x57464D;
+// Dual whip and whip-switch use held hotkeys; keep them hook-driven so an
+// asynchronous key-state sample cannot prematurely end their active cycles.
+const HOOK_TRACKED_HOLDS: usize = (1 << 4) | (1 << 5);
 static ENABLED: AtomicUsize = AtomicUsize::new(0);
 static TARGET_PID: AtomicUsize = AtomicUsize::new(0);
 static HELD: AtomicUsize = AtomicUsize::new(0);
@@ -331,7 +334,11 @@ impl Hotkeys {
         // arrives through a remote-control layer.
         HELD.store(physically_down, Relaxed);
         CAPTURED.fetch_and(physically_down, Relaxed);
-        ACTIVE.fetch_and(enabled & physically_down, Relaxed);
+        ACTIVE.fetch_and(
+            (enabled & physically_down & !HOOK_TRACKED_HOLDS) | HOOK_TRACKED_HOLDS,
+            Relaxed,
+        );
+        ACTIVE.fetch_and(enabled, Relaxed);
         PRESSED.fetch_and(enabled, Relaxed);
         SPACE_DOWN.store(usize::from(unsafe { GetAsyncKeyState(0x20) } < 0), Relaxed);
         LEFT_DOWN.store(unsafe { GetAsyncKeyState(1) } < 0, Relaxed);
