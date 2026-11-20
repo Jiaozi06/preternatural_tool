@@ -14,6 +14,19 @@ const RPC_E_CHANGED_MODE: HRESULT = 0x80010106u32 as i32;
 
 pub fn create_desktop_shortcut() -> io::Result<()> {
     let executable = std::env::current_exe()?;
+    let shortcut = desktop_shortcut_path()?;
+    if shortcut.exists() {
+        return Ok(());
+    }
+    write_desktop_shortcut(&executable, &shortcut)
+}
+
+pub fn set_desktop_shortcut_target(executable: &std::path::Path) -> io::Result<()> {
+    let shortcut = desktop_shortcut_path()?;
+    write_desktop_shortcut(executable, &shortcut)
+}
+
+fn desktop_shortcut_path() -> io::Result<PathBuf> {
     let mut desktop = [0u16; 260];
     let folder_result = unsafe {
         SHGetFolderPathW(
@@ -31,10 +44,13 @@ pub fn create_desktop_shortcut() -> io::Result<()> {
         .unwrap_or(desktop.len());
     let mut shortcut = PathBuf::from(String::from_utf16_lossy(&desktop[..folder_len]));
     shortcut.push("绿玩变异工具箱.lnk");
-    if shortcut.exists() {
-        return Ok(());
-    }
+    Ok(shortcut)
+}
 
+fn write_desktop_shortcut(
+    executable: &std::path::Path,
+    shortcut: &std::path::Path,
+) -> io::Result<()> {
     let initialized = unsafe { CoInitializeEx(null_mut(), COINIT_APARTMENTTHREADED as u32) };
     if initialized < 0 && initialized != RPC_E_CHANGED_MODE {
         return Err(io::Error::other(format!(
@@ -43,7 +59,7 @@ pub fn create_desktop_shortcut() -> io::Result<()> {
         )));
     }
     let uninitialize = initialized >= 0;
-    let result = unsafe { write_shortcut(&executable, &shortcut) };
+    let result = unsafe { write_shortcut(executable, shortcut) };
     if uninitialize {
         unsafe { CoUninitialize() };
     }

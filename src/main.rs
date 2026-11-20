@@ -31,7 +31,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 
 const ACCENT: Color32 = Color32::from_rgb(0, 95, 184);
 const WINDOW_TITLE: &str = "绿玩变异工具箱 v1.3 ©️Jiaozi";
-const CURRENT_VERSION: &str = "1.3.1";
+const CURRENT_VERSION: &str = "1.3.2";
 const MUTED: Color32 = Color32::from_rgb(82, 86, 94);
 const FIELD_WIDTH: f32 = 136.0;
 const FIELD_HEIGHT: f32 = 28.0;
@@ -164,6 +164,8 @@ struct App {
     desktop_shortcut_created: bool,
     update_mirror: bool,
     update_receiver: Option<Receiver<Result<updates::OnlineManifest, String>>>,
+    download_receiver: Option<Receiver<Result<std::path::PathBuf, String>>>,
+    download_status: Option<String>,
     online_manifest: Option<updates::OnlineManifest>,
     update_status: Option<String>,
     running: bool,
@@ -442,6 +444,8 @@ impl App {
             desktop_shortcut_created: false,
             update_mirror: false,
             update_receiver: None,
+            download_receiver: None,
+            download_status: None,
             online_manifest: None,
             update_status: None,
             running: false,
@@ -672,6 +676,24 @@ impl App {
         {
             self.update_receiver = None;
             self.update_status = Some(format!("检查失败：{error}"));
+        }
+    }
+
+    fn download_update(&mut self, url: String, version: String) {
+        if self.download_receiver.is_some() {
+            return;
+        }
+        self.download_status = Some(format!("正在下载 v{version}…"));
+        let (sender, receiver) = mpsc::channel();
+        self.download_receiver = Some(receiver);
+        if let Err(error) = thread::Builder::new()
+            .name("update-download".into())
+            .spawn(move || {
+                let _ = sender.send(updates::download_update(&url, &version));
+            })
+        {
+            self.download_receiver = None;
+            self.download_status = Some(format!("启动下载失败：{error}"));
         }
     }
 
@@ -1191,7 +1213,10 @@ impl App {
             if let Some(status) = &self.update_status {
                 ui.label(status);
             }
-            if let Some(manifest) = &self.online_manifest {
+            if let Some(status) = &self.download_status {
+                ui.label(status);
+            }
+            if let Some(manifest) = self.online_manifest.clone() {
                 let newer = updates::is_newer(&manifest.version, CURRENT_VERSION);
                 ui.label(if newer {
                     format!(
@@ -1204,18 +1229,25 @@ impl App {
                 if newer {
                     ui.horizontal(|ui| {
                         let download_url = if self.update_mirror {
-                            &manifest.mirror_download_url
+                            manifest.mirror_download_url.clone()
                         } else {
-                            &manifest.download_url
+                            manifest.download_url.clone()
+                        };
+                        let downloading = self.download_receiver.is_some();
+                        let label = if downloading {
+                            "正在下载…"
+                        } else {
+                            "下载并切换快捷方式"
                         };
                         if ui
-                            .add(
-                                egui::Button::new(RichText::new("直接下载").color(Color32::WHITE))
+                            .add_enabled(
+                                !downloading,
+                                egui::Button::new(RichText::new(label).color(Color32::WHITE))
                                     .fill(ACCENT),
                             )
                             .clicked()
                         {
-                            ui.ctx().open_url(egui::OpenUrl::new_tab(download_url));
+                            self.download_update(download_url, manifest.version.clone());
                         }
                         ui.hyperlink_to("版本详情", &manifest.release_url);
                     });
@@ -1300,6 +1332,35 @@ impl eframe::App for App {
 
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
         let consumed_click = self.capture_hotkey(ctx);
+        if let Some(receiver) = &self.download_receiver {
+            match receiver.try_recv() {
+                Ok(Ok(path)) => {
+                    self.download_status =
+                        Some(match shortcuts::set_desktop_shortcut_target(&path) {
+                            Ok(()) => {
+                                self.desktop_shortcut_created = true;
+                                format!(
+                                    "下载完成，桌面快捷方式已切换至 {}",
+                                    path.file_name().unwrap_or_default().to_string_lossy()
+                                )
+                            }
+                            Err(error) => format!("下载完成，但快捷方式更新失败：{error}"),
+                        });
+                    self.download_receiver = None;
+                }
+                Ok(Err(error)) => {
+                    self.download_status = Some(format!("下载失败：{error}"));
+                    self.download_receiver = None;
+                }
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.download_status = Some("下载失败：下载任务已退出。".into());
+                    self.download_receiver = None;
+                }
+                Err(mpsc::TryRecvError::Empty) => {
+                    ctx.request_repaint_after(Duration::from_millis(100));
+                }
+            }
+        }
         if let Some(receiver) = &self.update_receiver {
             match receiver.try_recv() {
                 Ok(Ok(manifest)) => {
