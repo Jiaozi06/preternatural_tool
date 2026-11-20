@@ -31,7 +31,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 
 const ACCENT: Color32 = Color32::from_rgb(0, 95, 184);
 const WINDOW_TITLE: &str = "绿玩变异工具箱 v1.3 ©️Jiaozi";
-const CURRENT_VERSION: &str = "1.3.2";
+const CURRENT_VERSION: &str = "1.3.3";
 const MUTED: Color32 = Color32::from_rgb(82, 86, 94);
 const FIELD_WIDTH: f32 = 136.0;
 const FIELD_HEIGHT: f32 = 28.0;
@@ -161,7 +161,6 @@ struct App {
     overlay: Option<overlay::Overlay>,
     overlay_enabled: bool,
     overlay_opacity: u8,
-    desktop_shortcut_created: bool,
     update_mirror: bool,
     update_receiver: Option<Receiver<Result<updates::OnlineManifest, String>>>,
     download_receiver: Option<Receiver<Result<std::path::PathBuf, String>>>,
@@ -264,8 +263,6 @@ struct SavedSettings {
     overlay_enabled: bool,
     #[serde(default = "default_overlay_opacity")]
     overlay_opacity: u8,
-    #[serde(default)]
-    desktop_shortcut_created: bool,
     #[serde(default)]
     spin: SavedSpin,
     #[serde(default)]
@@ -441,7 +438,6 @@ impl App {
             overlay: None,
             overlay_enabled: true,
             overlay_opacity: default_overlay_opacity(),
-            desktop_shortcut_created: false,
             update_mirror: false,
             update_receiver: None,
             download_receiver: None,
@@ -622,7 +618,6 @@ impl App {
         self.target_title = saved.target_title;
         self.overlay_enabled = saved.overlay_enabled;
         self.overlay_opacity = saved.overlay_opacity.clamp(20, 100);
-        self.desktop_shortcut_created = saved.desktop_shortcut_created;
         self.update_mirror = saved.update_mirror;
     }
 
@@ -1321,7 +1316,6 @@ impl eframe::App for App {
             target_title: self.target_title.clone(),
             overlay_enabled: self.overlay_enabled,
             overlay_opacity: self.overlay_opacity,
-            desktop_shortcut_created: self.desktop_shortcut_created,
         };
         eframe::set_value(storage, SETTINGS_KEY, &settings);
     }
@@ -1338,7 +1332,6 @@ impl eframe::App for App {
                     self.download_status =
                         Some(match shortcuts::set_desktop_shortcut_target(&path) {
                             Ok(()) => {
-                                self.desktop_shortcut_created = true;
                                 format!(
                                     "下载完成，桌面快捷方式已切换至 {}",
                                     path.file_name().unwrap_or_default().to_string_lossy()
@@ -1977,17 +1970,9 @@ fn main() -> eframe::Result<()> {
             let mut app = App::new(&cc.egui_ctx);
             if let Some(storage) = cc.storage {
                 app.restore(&*storage);
-                if !app.desktop_shortcut_created {
-                    match shortcuts::create_desktop_shortcut() {
-                        Ok(()) => app.desktop_shortcut_created = true,
-                        Err(error) => app.error = Some(format!("桌面快捷方式创建失败：{error}")),
-                    }
-                }
-            } else if !app.desktop_shortcut_created {
-                match shortcuts::create_desktop_shortcut() {
-                    Ok(()) => app.desktop_shortcut_created = true,
-                    Err(error) => app.error = Some(format!("桌面快捷方式创建失败：{error}")),
-                }
+            }
+            if let Err(error) = shortcuts::create_desktop_shortcut() {
+                app.error = Some(format!("桌面快捷方式创建失败：{error}"));
             }
             if let Ok(handle) = cc.window_handle() {
                 if let RawWindowHandle::Win32(handle) = handle.as_raw() {

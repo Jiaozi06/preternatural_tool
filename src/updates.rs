@@ -85,7 +85,7 @@ pub fn download_update(url: &str, version: &str) -> Result<PathBuf, String> {
 }
 
 fn request_download(host: &str, path: &str) -> io::Result<Vec<u8>> {
-    let agent = wide("LvwanMutationToolbox/1.3.2");
+    let agent = wide("LvwanMutationToolbox/1.3.3");
     let host = wide(host);
     let verb = wide("GET");
     let path = wide(path);
@@ -172,12 +172,12 @@ fn request_manifest(mirror: bool) -> io::Result<OnlineManifest> {
     } else {
         ("raw.githubusercontent.com", API_PATH)
     };
-    let agent = wide("LvwanMutationToolbox/1.3.2");
+    let agent = wide("LvwanMutationToolbox/1.3.3");
     let host = wide(host);
     let verb = wide("GET");
     let path = wide(path);
     let version = wide("HTTP/1.1");
-    let headers = wide("Accept: application/json\r\nUser-Agent: LvwanMutationToolbox/1.3.2\r\n");
+    let headers = wide("Accept: application/json\r\nUser-Agent: LvwanMutationToolbox/1.3.3\r\n");
 
     unsafe {
         let session = Handle::from_raw(

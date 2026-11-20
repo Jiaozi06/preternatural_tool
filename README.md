@@ -14,7 +14,7 @@ cargo +stable-x86_64-pc-windows-msvc build --release
 
 ## 更新
 
-设置页可选择“官方源”或“镜像源”，更新日志从仓库根目录的 `update.json` 获取。镜像源通过 gh-proxy.com 访问 GitHub Raw。检测到更新后可在工具箱内下载，并自动将桌面快捷方式指向新版本。
+设置页可选择“官方源”或“镜像源”，更新日志从仓库根目录的 `update.json` 获取。镜像源通过 gh-proxy.com 访问 GitHub Raw。检测到更新后可在工具箱内下载，并自动将桌面快捷方式指向新版本；每次启动也会检查并补回被删除的快捷方式。
 
 ## 许可
 
