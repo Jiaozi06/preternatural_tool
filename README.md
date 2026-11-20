@@ -7,7 +7,7 @@ Windows 11 桌面工具，提供拾取、战斗、飞行、悬浮窗和在线更
 安装 Rust stable MSVC 工具链后，在 Windows 上运行：
 
 ```powershell
-cargo build --release
+cargo +stable-x86_64-pc-windows-msvc build --release
 ```
 
 可执行文件位于 `target/release/game-macro.exe`。发布版本使用文件名“绿玩变异工具箱 v1.2.exe”。
@@ -19,3 +19,4 @@ cargo build --release
 ## 许可
 
 本项目使用 MIT License，详见 [LICENSE](LICENSE)。
+

@@ -1148,7 +1148,11 @@ impl App {
                         self.fetch_online_manifest();
                     }
                     egui::ComboBox::from_id_salt("update_source")
-                        .selected_text(if self.update_mirror { "镜像源" } else { "官方源" })
+                        .selected_text(if self.update_mirror {
+                            "镜像源"
+                        } else {
+                            "官方源"
+                        })
                         .show_ui(ui, |ui| {
                             if ui.selectable_label(!self.update_mirror, "官方源").clicked() {
                                 self.update_mirror = false;
@@ -1168,7 +1172,10 @@ impl App {
             if let Some(manifest) = &self.online_manifest {
                 let newer = updates::is_newer(&manifest.version, CURRENT_VERSION);
                 ui.label(if newer {
-                    format!("发现新版本 v{}（当前 v{}）", manifest.version, CURRENT_VERSION)
+                    format!(
+                        "发现新版本 v{}（当前 v{}）",
+                        manifest.version, CURRENT_VERSION
+                    )
                 } else {
                     format!("当前版本 v{} 已是最新版本", CURRENT_VERSION)
                 });

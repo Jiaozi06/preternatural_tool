@@ -160,9 +160,11 @@ pub fn is_newer(remote: &str, current: &str) -> bool {
             let max = remote.len().max(current.len());
             (0..max)
                 .map(|index| {
-                    remote.get(index).copied().unwrap_or(0).cmp(
-                        &current.get(index).copied().unwrap_or(0),
-                    )
+                    remote
+                        .get(index)
+                        .copied()
+                        .unwrap_or(0)
+                        .cmp(&current.get(index).copied().unwrap_or(0))
                 })
                 .find(|ordering| !ordering.is_eq())
                 .is_some_and(|ordering| ordering.is_gt())
