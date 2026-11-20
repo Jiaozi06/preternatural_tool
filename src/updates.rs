@@ -13,6 +13,8 @@ const MAX_RESPONSE_BYTES: usize = 256 * 1024;
 pub struct OnlineManifest {
     pub version: String,
     pub release_url: String,
+    pub download_url: String,
+    pub mirror_download_url: String,
     pub changelog: Vec<String>,
 }
 
@@ -47,12 +49,12 @@ fn request_manifest(mirror: bool) -> io::Result<OnlineManifest> {
     } else {
         ("raw.githubusercontent.com", API_PATH)
     };
-    let agent = wide("LvwanMutationToolbox/1.3");
+    let agent = wide("LvwanMutationToolbox/1.3.1");
     let host = wide(host);
     let verb = wide("GET");
     let path = wide(path);
     let version = wide("HTTP/1.1");
-    let headers = wide("Accept: application/json\r\nUser-Agent: LvwanMutationToolbox/1.3\r\n");
+    let headers = wide("Accept: application/json\r\nUser-Agent: LvwanMutationToolbox/1.3.1\r\n");
 
     unsafe {
         let session = Handle::from_raw(

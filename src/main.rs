@@ -31,7 +31,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 
 const ACCENT: Color32 = Color32::from_rgb(0, 95, 184);
 const WINDOW_TITLE: &str = "绿玩变异工具箱 v1.3 ©️Jiaozi";
-const CURRENT_VERSION: &str = "1.3.0";
+const CURRENT_VERSION: &str = "1.3.1";
 const MUTED: Color32 = Color32::from_rgb(82, 86, 94);
 const FIELD_WIDTH: f32 = 136.0;
 const FIELD_HEIGHT: f32 = 28.0;
@@ -1202,7 +1202,23 @@ impl App {
                     format!("当前版本 v{} 已是最新版本", CURRENT_VERSION)
                 });
                 if newer {
-                    ui.hyperlink_to("打开下载页面", &manifest.release_url);
+                    ui.horizontal(|ui| {
+                        let download_url = if self.update_mirror {
+                            &manifest.mirror_download_url
+                        } else {
+                            &manifest.download_url
+                        };
+                        if ui
+                            .add(
+                                egui::Button::new(RichText::new("直接下载").color(Color32::WHITE))
+                                    .fill(ACCENT),
+                            )
+                            .clicked()
+                        {
+                            ui.ctx().open_url(egui::OpenUrl::new_tab(download_url));
+                        }
+                        ui.hyperlink_to("版本详情", &manifest.release_url);
+                    });
                 }
                 ui.add_space(6.0);
                 for entry in &manifest.changelog {
