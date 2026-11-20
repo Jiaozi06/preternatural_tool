@@ -658,12 +658,13 @@ dependencies = [
 
 [[package]]
 name = "game-macro"
-version = "1.2.0"
+version = "1.3.0"
 dependencies = [
  "eframe",
  "raw-window-handle",
  "serde",
  "serde_json",
+ "winapi",
  "windows-sys 0.61.2",
  "winresource",
 ]

@@ -10,7 +10,7 @@ Windows 11 桌面工具，提供拾取、战斗、飞行、悬浮窗和在线更
 cargo +stable-x86_64-pc-windows-msvc build --release
 ```
 
-可执行文件位于 `target/release/game-macro.exe`。发布版本使用文件名“绿玩变异工具箱 v1.2.exe”。
+可执行文件位于 `target/release/game-macro.exe`。发布版本使用文件名“绿玩变异工具箱 v1.3.exe”。
 
 ## 更新
 

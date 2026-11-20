@@ -5,6 +5,7 @@ mod instance;
 mod macros;
 mod overlay;
 mod processes;
+mod shortcuts;
 mod tray;
 mod updates;
 mod whip;
@@ -29,8 +30,8 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 };
 
 const ACCENT: Color32 = Color32::from_rgb(0, 95, 184);
-const WINDOW_TITLE: &str = "绿玩变异工具箱 v1.2 ©️Jiaozi";
-const CURRENT_VERSION: &str = "1.2.0";
+const WINDOW_TITLE: &str = "绿玩变异工具箱 v1.3 ©️Jiaozi";
+const CURRENT_VERSION: &str = "1.3.0";
 const MUTED: Color32 = Color32::from_rgb(82, 86, 94);
 const FIELD_WIDTH: f32 = 136.0;
 const FIELD_HEIGHT: f32 = 28.0;
@@ -159,6 +160,8 @@ struct App {
     tray: Option<tray::Tray>,
     overlay: Option<overlay::Overlay>,
     overlay_enabled: bool,
+    overlay_opacity: u8,
+    desktop_shortcut_created: bool,
     update_mirror: bool,
     update_receiver: Option<Receiver<Result<updates::OnlineManifest, String>>>,
     online_manifest: Option<updates::OnlineManifest>,
@@ -257,6 +260,10 @@ struct SavedSettings {
     target_title: String,
     #[serde(default = "enabled_by_default")]
     overlay_enabled: bool,
+    #[serde(default = "default_overlay_opacity")]
+    overlay_opacity: u8,
+    #[serde(default)]
+    desktop_shortcut_created: bool,
     #[serde(default)]
     spin: SavedSpin,
     #[serde(default)]
@@ -265,6 +272,10 @@ struct SavedSettings {
 
 fn default_switch_cooldown_ms() -> u32 {
     DEFAULT_SWITCH_COOLDOWN_MS
+}
+
+fn default_overlay_opacity() -> u8 {
+    90
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -427,6 +438,8 @@ impl App {
             tray: None,
             overlay: None,
             overlay_enabled: true,
+            overlay_opacity: default_overlay_opacity(),
+            desktop_shortcut_created: false,
             update_mirror: false,
             update_receiver: None,
             online_manifest: None,
@@ -604,6 +617,8 @@ impl App {
         self.target_path = saved.target_path;
         self.target_title = saved.target_title;
         self.overlay_enabled = saved.overlay_enabled;
+        self.overlay_opacity = saved.overlay_opacity.clamp(20, 100);
+        self.desktop_shortcut_created = saved.desktop_shortcut_created;
         self.update_mirror = saved.update_mirror;
     }
 
@@ -1138,6 +1153,13 @@ impl App {
         card(ui, |ui| {
             feature_header(ui, "功能悬浮窗", &mut self.overlay_enabled);
             ui.colored_label(MUTED, "启动热键后，在所选应用的屏幕左下侧显示功能状态。");
+            row(ui, "不透明度", |ui| {
+                ui.add_sized(
+                    [FIELD_WIDTH, FIELD_HEIGHT],
+                    egui::Slider::new(&mut self.overlay_opacity, 20..=100).suffix("%"),
+                );
+            });
+            ui.colored_label(MUTED, "数值越低越透明；设置会自动保存。");
         });
         ui.add_space(12.0);
         card(ui, |ui| {
@@ -1250,6 +1272,8 @@ impl eframe::App for App {
             target_path: self.target_path.clone(),
             target_title: self.target_title.clone(),
             overlay_enabled: self.overlay_enabled,
+            overlay_opacity: self.overlay_opacity,
+            desktop_shortcut_created: self.desktop_shortcut_created,
         };
         eframe::set_value(storage, SETTINGS_KEY, &settings);
     }
@@ -1414,7 +1438,7 @@ impl eframe::App for App {
                 .worker
                 .as_ref()
                 .map_or(0, |worker| worker.cooldown.load(Ordering::Relaxed));
-            overlay.update(target, self.enabled_mask(), cooldown);
+            overlay.update(target, self.enabled_mask(), cooldown, self.overlay_opacity);
         }
     }
 }
@@ -1709,6 +1733,7 @@ mod tests {
         app.target_path = "C:\\Games\\preternatural.exe".into();
         app.target_title = "超自然行动组".into();
         app.overlay_enabled = false;
+        app.overlay_opacity = 67;
         app.whip_enabled = false;
         app.whip = Binding::from_code(0x7a).unwrap();
         app.whip_slots = [7, 3];
@@ -1746,6 +1771,7 @@ mod tests {
         assert_eq!(reopened.settings().unwrap().target_path, app.target_path);
         assert_eq!(reopened.target_title, "超自然行动组");
         assert!(!reopened.overlay_enabled);
+        assert_eq!(reopened.overlay_opacity, 67);
         assert_eq!(reopened.whip.label, "F11");
         assert_eq!(reopened.whip_slots, [7, 3]);
         assert_eq!(reopened.whip_charge_ms, 600);
@@ -1873,7 +1899,18 @@ fn main() -> eframe::Result<()> {
         Box::new(|cc| {
             let mut app = App::new(&cc.egui_ctx);
             if let Some(storage) = cc.storage {
-                app.restore(storage);
+                app.restore(&*storage);
+                if !app.desktop_shortcut_created {
+                    match shortcuts::create_desktop_shortcut() {
+                        Ok(()) => app.desktop_shortcut_created = true,
+                        Err(error) => app.error = Some(format!("桌面快捷方式创建失败：{error}")),
+                    }
+                }
+            } else if !app.desktop_shortcut_created {
+                match shortcuts::create_desktop_shortcut() {
+                    Ok(()) => app.desktop_shortcut_created = true,
+                    Err(error) => app.error = Some(format!("桌面快捷方式创建失败：{error}")),
+                }
             }
             if let Ok(handle) = cc.window_handle() {
                 if let RawWindowHandle::Win32(handle) = handle.as_raw() {
@@ -1883,7 +1920,7 @@ fn main() -> eframe::Result<()> {
                     }
                 }
             }
-            match overlay::Overlay::create() {
+            match overlay::Overlay::create(app.overlay_opacity) {
                 Ok(overlay) => app.overlay = Some(overlay),
                 Err(error) => {
                     app.error

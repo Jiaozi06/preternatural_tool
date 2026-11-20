@@ -47,12 +47,12 @@ fn request_manifest(mirror: bool) -> io::Result<OnlineManifest> {
     } else {
         ("raw.githubusercontent.com", API_PATH)
     };
-    let agent = wide("LvwanMutationToolbox/1.2");
+    let agent = wide("LvwanMutationToolbox/1.3");
     let host = wide(host);
     let verb = wide("GET");
     let path = wide(path);
     let version = wide("HTTP/1.1");
-    let headers = wide("Accept: application/json\r\nUser-Agent: LvwanMutationToolbox/1.2\r\n");
+    let headers = wide("Accept: application/json\r\nUser-Agent: LvwanMutationToolbox/1.3\r\n");
 
     unsafe {
         let session = Handle::from_raw(

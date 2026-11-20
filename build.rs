@@ -8,9 +8,9 @@ fn main() -> std::io::Result<()> {
         resource
             .set_icon(ICON)
             .set_manifest_file(MANIFEST)
-            .set("ProductName", "绿玩变异工具箱 v1.2 ©️Jiaozi")
-            .set("FileDescription", "绿玩变异工具箱 v1.2 ©️Jiaozi")
-            .set("OriginalFilename", "绿玩变异工具箱 v1.2.exe")
+            .set("ProductName", "绿玩变异工具箱 v1.3 ©️Jiaozi")
+            .set("FileDescription", "绿玩变异工具箱 v1.3 ©️Jiaozi")
+            .set("OriginalFilename", "绿玩变异工具箱 v1.3.exe")
             .set("LegalCopyright", "©️ Jiaozi");
         resource.compile()?;
     }

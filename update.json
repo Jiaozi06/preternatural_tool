@@ -1,9 +1,8 @@
 {
-  "version": "1.2.0",
-  "release_url": "https://github.com/Jiaozi06/preternatural_tool/releases/tag/v1.2.0",
+  "version": "1.3.0",
+  "release_url": "https://github.com/Jiaozi06/preternatural_tool/releases/tag/v1.3.0",
   "changelog": [
-    "新增 GitHub 官方源与 gh-proxy.com 镜像源在线检查更新。",
-    "更新日志改为从仓库 update.json 在线获取。",
-    "左右飞改为共用 A/D 基础时长，随机延迟逐次独立抽取，并支持按起飞时长分段调整。"
+    "首次启动时自动在桌面创建工具箱快捷方式。",
+    "设置页新增功能悬浮窗不透明度调节，设置会自动保存。"
   ]
 }
