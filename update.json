@@ -1,10 +1,9 @@
 {
-  "version": "1.3.5",
-  "release_url": "https://github.com/Jiaozi06/preternatural_tool/releases/tag/v1.3.5",
-  "download_url": "https://github.com/Jiaozi06/preternatural_tool/releases/download/v1.3.5/LvwanToolbox-v1.3.5.exe",
-  "mirror_download_url": "https://gh-proxy.com/https://github.com/Jiaozi06/preternatural_tool/releases/download/v1.3.5/LvwanToolbox-v1.3.5.exe",
+  "version": "1.3.6",
+  "release_url": "https://github.com/Jiaozi06/preternatural_tool/releases/tag/v1.3.6",
+  "download_url": "https://github.com/Jiaozi06/preternatural_tool/releases/download/v1.3.6/LvwanToolbox-v1.3.6.exe",
+  "mirror_download_url": "https://gh-proxy.com/https://github.com/Jiaozi06/preternatural_tool/releases/download/v1.3.6/LvwanToolbox-v1.3.6.exe",
   "changelog": [
-    "双鞭切槽时统一按住数字键 20 ms，切槽后默认等待 80 ms 再蓄力。",
-    "双鞭设置新增两把鞭子共用的切槽后等待时间。"
+    "修复转圈圈热键按住时可能失效的问题，按下开始转动，松开停止。"
   ]
 }
