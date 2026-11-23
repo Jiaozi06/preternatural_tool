@@ -1,6 +1,6 @@
 use crate::flight::{QuickFlight, SideFlight};
 use crate::processes::{self, ForegroundTarget};
-use crate::whip::{DualWhip, WhipSwitch};
+use crate::whip::{DualWhip, WhipNoSlow, WhipSwitch};
 use crate::windows::{key, mouse_button, mouse_move, scan, send, wheel_down, Hotkeys, Input};
 use std::io;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -20,6 +20,7 @@ pub const SIDE_ENABLED: usize = 8;
 pub const WHIP_ENABLED: usize = 16;
 pub const WHIP_SWITCH_ENABLED: usize = 32;
 pub const SPIN_ENABLED: usize = 64;
+pub const WHIP_NO_SLOW_ENABLED: usize = 128;
 
 pub struct Settings {
     pub pickup: u32,
@@ -42,6 +43,10 @@ pub struct Settings {
     pub quick_auto_side: bool,
     pub spin: u32,
     pub spin_pixels: u32,
+    pub whip_no_slow: u32,
+    pub revolver_slot: u32,
+    pub whip_no_slow_charge_ms: u32,
+    pub revolver_wait_ms: u32,
     pub target_path: String,
     pub whip: u32,
     pub whip_slots: [u32; 2],
@@ -197,6 +202,11 @@ pub fn run(
         settings.whip_switch_cooldown_ms,
     )?;
     let mut side = SideFlight::new(settings.side_random_max_ms)?;
+    let mut whip_no_slow = WhipNoSlow::new(
+        settings.revolver_slot,
+        settings.whip_no_slow_charge_ms,
+        settings.revolver_wait_ms,
+    )?;
     let hotkeys = Hotkeys::install([
         settings.pickup,
         settings.spear,
@@ -205,6 +215,7 @@ pub fn run(
         settings.whip,
         settings.whip_switch,
         settings.spin,
+        settings.whip_no_slow,
     ])?;
     let mut focus = ForegroundTarget::new(settings.target_path);
     let mut previous = 0;
@@ -233,14 +244,26 @@ pub fn run(
         let left_pressed = hotkeys.take_left_press();
         let left_down = hotkeys.left_down();
         let instant_locked = spear.active() || whip_switch.active();
+        let now = Instant::now();
+        if enabled & WHIP_NO_SLOW_ENABLED == 0 {
+            whip_no_slow.cancel()?;
+        } else {
+            let trigger = pressed & WHIP_NO_SLOW_ENABLED != 0
+                && !left_down
+                && !left_pressed
+                && !instant_locked
+                && !whip.active()
+                && !quick.active();
+            whip_no_slow.update(trigger, now)?;
+        }
+        let attack_locked = instant_locked || whip_no_slow.active();
         let quick_start =
-            pressed & QUICK_ENABLED != 0 && !left_pressed && !left_down && !instant_locked;
+            pressed & QUICK_ENABLED != 0 && !left_pressed && !left_down && !attack_locked;
         if quick_start {
             spear.cancel()?;
             whip.cancel()?;
             whip_switch.cancel()?;
         }
-        let now = Instant::now();
         quick.update(
             enabled & QUICK_ENABLED != 0,
             quick_start,
@@ -286,7 +309,7 @@ pub fn run(
             })
             .unwrap_or(settings.side_ms);
         side.update(side_active, side_interval_ms, now)?;
-        let hold_whip = down & WHIP_ENABLED != 0 && !quick.active() && !instant_locked;
+        let hold_whip = down & WHIP_ENABLED != 0 && !quick.active() && !attack_locked;
         if hold_whip {
             spear.cancel()?;
             whip_switch.cancel()?;
@@ -297,6 +320,7 @@ pub fn run(
         } else {
             let hold_switch = down & WHIP_SWITCH_ENABLED != 0
                 && !quick.active()
+                && !whip_no_slow.active()
                 && !whip.active()
                 && !spear.active();
             if hold_switch {
@@ -308,6 +332,7 @@ pub fn run(
         }
         if enabled & SPEAR_ENABLED != 0
             && !quick.active()
+            && !whip_no_slow.active()
             && !whip.active()
             && !whip_switch.active()
         {
@@ -316,7 +341,8 @@ pub fn run(
             spear.cancel()?;
         }
         let cooling = (usize::from(spear.active()) * SPEAR_ENABLED)
-            | (usize::from(whip_switch.active()) * WHIP_SWITCH_ENABLED);
+            | (usize::from(whip_switch.active()) * WHIP_SWITCH_ENABLED)
+            | (usize::from(whip_no_slow.active()) * WHIP_NO_SLOW_ENABLED);
         cooldown.store(cooling, Ordering::Relaxed);
 
         if down & SPIN_ENABLED != 0 {

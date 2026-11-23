@@ -1,6 +1,6 @@
 use crate::macros::{
     PICKUP_ENABLED, QUICK_ENABLED, SIDE_ENABLED, SPEAR_ENABLED, SPIN_ENABLED, WHIP_ENABLED,
-    WHIP_SWITCH_ENABLED,
+    WHIP_NO_SLOW_ENABLED, WHIP_SWITCH_ENABLED,
 };
 use crate::processes::ForegroundTarget;
 use std::cell::{Cell, RefCell};
@@ -15,11 +15,12 @@ use windows_sys::Win32::UI::WindowsAndMessaging::*;
 const WIDTH: i32 = 154;
 const ROW: i32 = 23;
 const HEADING: i32 = 32;
-const FEATURES: [(&str, usize); 7] = [
+const FEATURES: [(&str, usize); 8] = [
     ("快捷拾取", PICKUP_ENABLED),
     ("长枪瞬切", SPEAR_ENABLED),
     ("双鞭", WHIP_ENABLED),
     ("鞭子瞬切", WHIP_SWITCH_ENABLED),
+    ("卡鞭子无减速", WHIP_NO_SLOW_ENABLED),
     ("转圈圈", SPIN_ENABLED),
     ("快速飞", QUICK_ENABLED),
     ("左右飞", SIDE_ENABLED),

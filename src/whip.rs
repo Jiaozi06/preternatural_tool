@@ -194,6 +194,83 @@ impl Drop for WhipSwitch {
     }
 }
 
+pub struct WhipNoSlow {
+    slot: u16,
+    charge: Duration,
+    revolver_wait: Duration,
+    stage: Option<(NoSlowStep, Instant)>,
+}
+
+#[derive(Clone, Copy)]
+enum NoSlowStep {
+    PressSlot,
+    ReleaseSlot,
+    ReleaseAttack,
+}
+
+impl WhipNoSlow {
+    pub fn new(slot: u32, charge_ms: u32, revolver_wait_ms: u32) -> io::Result<Self> {
+        Ok(Self {
+            slot: scan(slot)?,
+            charge: Duration::from_millis(charge_ms.into()),
+            revolver_wait: Duration::from_millis(revolver_wait_ms.into()),
+            stage: None,
+        })
+    }
+
+    pub fn active(&self) -> bool {
+        self.stage.is_some()
+    }
+
+    pub fn update(&mut self, trigger: bool, now: Instant) -> io::Result<()> {
+        self.stage = match self.stage {
+            None if trigger => {
+                send(&[attack(false)])?;
+                Some((NoSlowStep::PressSlot, Instant::now() + self.charge))
+            }
+            Some((step, due)) if now >= due => match step {
+                NoSlowStep::PressSlot => {
+                    send(&[key(self.slot, false)])?;
+                    Some((NoSlowStep::ReleaseSlot, Instant::now() + SLOT_HOLD))
+                }
+                NoSlowStep::ReleaseSlot => {
+                    send(&[key(self.slot, true)])?;
+                    Some((
+                        NoSlowStep::ReleaseAttack,
+                        Instant::now() + self.revolver_wait,
+                    ))
+                }
+                NoSlowStep::ReleaseAttack => {
+                    send(&[attack(true)])?;
+                    None
+                }
+            },
+            stage => stage,
+        };
+        Ok(())
+    }
+
+    pub fn cancel(&mut self) -> io::Result<()> {
+        if let Some((step, _)) = self.stage {
+            if matches!(step, NoSlowStep::ReleaseSlot) {
+                let slot_result = send(&[key(self.slot, true)]);
+                let attack_result = send(&[attack(true)]);
+                slot_result.and(attack_result)?;
+            } else {
+                send(&[attack(true)])?;
+            }
+            self.stage = None;
+        }
+        Ok(())
+    }
+}
+
+impl Drop for WhipNoSlow {
+    fn drop(&mut self) {
+        let _ = self.cancel();
+    }
+}
+
 fn attack(up: bool) -> Input {
     mouse_button(1, up).expect("left mouse button")
 }

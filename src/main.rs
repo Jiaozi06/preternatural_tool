@@ -16,7 +16,7 @@ use flight::{DEFAULT_JET_DELAY_MS, DEFAULT_SIDE_MS};
 use macros::{
     keyboard_key, Settings, DEFAULT_DELAYS, DEFAULT_PICKUP_INTERVAL_MS, DEFAULT_SWITCH_COOLDOWN_MS,
     PICKUP_ENABLED, QUICK_ENABLED, SIDE_ENABLED, SPEAR_ENABLED, SPIN_ENABLED, WHIP_ENABLED,
-    WHIP_SWITCH_ENABLED,
+    WHIP_NO_SLOW_ENABLED, WHIP_SWITCH_ENABLED,
 };
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -43,6 +43,7 @@ const DEFAULT_SIDE: Binding = Binding::new(0x76, "F7");
 const DEFAULT_WHIP: Binding = Binding::new(0x78, "F9");
 const DEFAULT_WHIP_SWITCH: Binding = Binding::new(0x79, "F10");
 const DEFAULT_SPIN: Binding = Binding::new(0x7a, "F11");
+const DEFAULT_WHIP_NO_SLOW: Binding = Binding::new(0x7b, "F12");
 const DELAY_FIELDS: [&str; 5] = [
     "攻击键按住",
     "松开攻击后，等待切换",
@@ -152,6 +153,11 @@ struct App {
     spin: Binding,
     spin_enabled: bool,
     spin_pixels: u32,
+    whip_no_slow: Binding,
+    whip_no_slow_enabled: bool,
+    revolver_slot: u8,
+    whip_no_slow_charge_ms: u32,
+    revolver_wait_ms: u32,
     page: Page,
     target_path: String,
     target_title: String,
@@ -189,6 +195,7 @@ enum HotkeyField {
     Whip,
     WhipSwitch,
     Spin,
+    WhipNoSlow,
     Attack,
 }
 
@@ -269,7 +276,35 @@ struct SavedSettings {
     #[serde(default)]
     spin: SavedSpin,
     #[serde(default)]
+    whip_no_slow: SavedWhipNoSlow,
+    #[serde(default)]
     update_mirror: bool,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct SavedWhipNoSlow {
+    key: u32,
+    enabled: bool,
+    slot: u8,
+    charge_ms: u32,
+    #[serde(default = "default_revolver_wait_ms")]
+    revolver_wait_ms: u32,
+}
+
+fn default_revolver_wait_ms() -> u32 {
+    1000
+}
+
+impl Default for SavedWhipNoSlow {
+    fn default() -> Self {
+        Self {
+            key: DEFAULT_WHIP_NO_SLOW.code,
+            enabled: false,
+            slot: 2,
+            charge_ms: 1000,
+            revolver_wait_ms: default_revolver_wait_ms(),
+        }
+    }
 }
 
 fn default_switch_cooldown_ms() -> u32 {
@@ -397,6 +432,7 @@ fn enabled_by_default() -> bool {
 impl App {
     fn new(ctx: &egui::Context) -> Self {
         setup_style(ctx);
+        let no_slow = SavedWhipNoSlow::default();
         Self {
             pickup: Binding::new(u32::from(b'G'), "G"),
             pickup_enabled: true,
@@ -436,6 +472,11 @@ impl App {
             spin: DEFAULT_SPIN,
             spin_enabled: true,
             spin_pixels: 8,
+            whip_no_slow: DEFAULT_WHIP_NO_SLOW,
+            whip_no_slow_enabled: no_slow.enabled,
+            revolver_slot: no_slow.slot,
+            whip_no_slow_charge_ms: no_slow.charge_ms,
+            revolver_wait_ms: no_slow.revolver_wait_ms,
             page: Page::Pickup,
             target_path: String::new(),
             target_title: String::new(),
@@ -468,6 +509,7 @@ impl App {
             self.whip.code,
             self.whip_switch.code,
             self.spin.code,
+            self.whip_no_slow.code,
         ];
         if bindings
             .iter()
@@ -524,6 +566,10 @@ impl App {
             whip_switch_cooldown_ms: self.whip_switch_cooldown_ms,
             spin: self.spin.code,
             spin_pixels: self.spin_pixels,
+            whip_no_slow: self.whip_no_slow.code,
+            revolver_slot: u32::from(b'0' + self.revolver_slot),
+            whip_no_slow_charge_ms: self.whip_no_slow_charge_ms,
+            revolver_wait_ms: self.revolver_wait_ms,
         })
     }
 
@@ -612,6 +658,27 @@ impl App {
         );
         self.spin_enabled = spin.enabled;
         self.spin_pixels = spin.pixels.max(1);
+        let no_slow = saved.whip_no_slow;
+        self.whip_no_slow = restore_binding(
+            no_slow.key,
+            DEFAULT_WHIP_NO_SLOW,
+            &[
+                self.pickup.code,
+                self.spear.code,
+                self.quick.code,
+                self.side.code,
+                self.whip.code,
+                self.whip_switch.code,
+                self.spin.code,
+            ],
+            false,
+        );
+        self.whip_no_slow_enabled = no_slow.enabled;
+        if SLOTS.contains(&no_slow.slot) {
+            self.revolver_slot = no_slow.slot;
+        }
+        self.whip_no_slow_charge_ms = no_slow.charge_ms.clamp(10, 60_000);
+        self.revolver_wait_ms = no_slow.revolver_wait_ms.clamp(10, 60_000);
         self.quick_enabled = flight.quick_enabled;
         self.side_enabled = flight.side_enabled;
         if SLOTS.contains(&flight.jet_slot) {
@@ -639,6 +706,7 @@ impl App {
             | (usize::from(self.whip_enabled) * WHIP_ENABLED)
             | (usize::from(self.whip_switch_enabled) * WHIP_SWITCH_ENABLED)
             | (usize::from(self.spin_enabled) * SPIN_ENABLED)
+            | (usize::from(self.whip_no_slow_enabled) * WHIP_NO_SLOW_ENABLED)
     }
 
     fn start(&mut self) {
@@ -714,6 +782,7 @@ impl App {
             HotkeyField::Whip => self.whip_enabled,
             HotkeyField::WhipSwitch => self.whip_switch_enabled,
             HotkeyField::Spin => self.spin_enabled,
+            HotkeyField::WhipNoSlow => self.whip_no_slow_enabled,
         };
         if !enabled {
             self.listening = None;
@@ -775,6 +844,7 @@ impl App {
             (HotkeyField::Whip, self.whip),
             (HotkeyField::WhipSwitch, self.whip_switch),
             (HotkeyField::Spin, self.spin),
+            (HotkeyField::WhipNoSlow, self.whip_no_slow),
         ];
         if field != HotkeyField::Attack
             && defaults
@@ -792,6 +862,7 @@ impl App {
             HotkeyField::Whip => &mut self.whip,
             HotkeyField::WhipSwitch => &mut self.whip_switch,
             HotkeyField::Spin => &mut self.spin,
+            HotkeyField::WhipNoSlow => &mut self.whip_no_slow,
             HotkeyField::Attack => &mut self.attack,
         };
         *current = binding;
@@ -810,6 +881,7 @@ impl App {
             HotkeyField::Whip => self.whip.label,
             HotkeyField::WhipSwitch => self.whip_switch.label,
             HotkeyField::Spin => self.spin.label,
+            HotkeyField::WhipNoSlow => self.whip_no_slow.label,
             HotkeyField::Attack => self.attack.label,
         };
         let button = if listening {
@@ -927,6 +999,45 @@ impl App {
                         egui::DragValue::new(&mut self.whip_wait_ms).suffix(" ms"),
                     );
                 });
+            });
+        });
+    }
+
+    fn whip_no_slow_settings(&mut self, ui: &mut egui::Ui) {
+        card(ui, |ui| {
+            feature_header(ui, "卡鞭子无减速", &mut self.whip_no_slow_enabled);
+            if !self.whip_no_slow_enabled {
+                return;
+            }
+            ui.colored_label(MUTED, "先装备鞭子，按一次热键执行。");
+            ui.add_enabled_ui(self.worker.is_none(), |ui| {
+                row(ui, "热键", |ui| {
+                    self.hotkey_button(ui, HotkeyField::WhipNoSlow)
+                });
+                row(ui, "左轮位（主键盘）", |ui| {
+                    slot_field(ui, "whip_no_slow_revolver", &mut self.revolver_slot)
+                });
+                for (label, duration_ms) in [
+                    ("切左轮前蓄力", &mut self.whip_no_slow_charge_ms),
+                    ("切左轮后等待", &mut self.revolver_wait_ms),
+                ] {
+                    row(ui, label, |ui| {
+                        let mut seconds = f64::from(*duration_ms) / 1000.0;
+                        if ui
+                            .add_sized(
+                                field_size(),
+                                egui::DragValue::new(&mut seconds)
+                                    .speed(0.01)
+                                    .range(0.01..=60.0)
+                                    .fixed_decimals(2)
+                                    .suffix(" 秒"),
+                            )
+                            .changed()
+                        {
+                            *duration_ms = (seconds * 1000.0).round() as u32;
+                        }
+                    });
+                }
             });
         });
     }
@@ -1274,11 +1385,22 @@ impl App {
 }
 
 fn restore_binding(saved: u32, default: Binding, used: &[u32], reserve_space: bool) -> Binding {
-    [saved, default.code, 0x78, 0x79, 0x7a, 0x7b, 0x7c, 0x7d]
-        .into_iter()
-        .filter(|code| *code != 1 && (!reserve_space || *code != 0x20) && !used.contains(code))
-        .find_map(Binding::from_code)
-        .expect("at least one function key is unassigned")
+    [
+        saved,
+        default.code,
+        0x78,
+        0x79,
+        0x7a,
+        0x7b,
+        0x7c,
+        0x7d,
+        0x77,
+        0x74,
+    ]
+    .into_iter()
+    .filter(|code| *code != 1 && (!reserve_space || *code != 0x20) && !used.contains(code))
+    .find_map(Binding::from_code)
+    .expect("at least one function key is unassigned")
 }
 
 impl eframe::App for App {
@@ -1328,6 +1450,13 @@ impl eframe::App for App {
                 key: self.spin.code,
                 enabled: self.spin_enabled,
                 pixels: self.spin_pixels,
+            },
+            whip_no_slow: SavedWhipNoSlow {
+                key: self.whip_no_slow.code,
+                enabled: self.whip_no_slow_enabled,
+                slot: self.revolver_slot,
+                charge_ms: self.whip_no_slow_charge_ms,
+                revolver_wait_ms: self.revolver_wait_ms,
             },
             update_mirror: self.update_mirror,
             target_path: self.target_path.clone(),
@@ -1485,6 +1614,8 @@ impl eframe::App for App {
                                     self.battle_settings(ui);
                                     ui.add_space(12.0);
                                     self.whip_switch_settings(ui);
+                                    ui.add_space(12.0);
+                                    self.whip_no_slow_settings(ui);
                                     return;
                                 }
                                 Page::Pickup => {}

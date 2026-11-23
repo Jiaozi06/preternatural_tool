@@ -181,7 +181,7 @@ pub fn mouse_button(vk: u32, up: bool) -> Option<Input> {
     Some(mouse(if up { down_flag << 1 } else { down_flag }, data))
 }
 
-static BINDINGS: [AtomicUsize; 7] = [const { AtomicUsize::new(0) }; 7];
+static BINDINGS: [AtomicUsize; 8] = [const { AtomicUsize::new(0) }; 8];
 static SPACE_DOWN: AtomicUsize = AtomicUsize::new(0);
 static LEFT_PRESSED: AtomicBool = AtomicBool::new(false);
 static LEFT_DOWN: AtomicBool = AtomicBool::new(false);
@@ -283,7 +283,7 @@ pub struct Hotkeys {
 }
 
 impl Hotkeys {
-    pub fn install(bindings: [u32; 7]) -> io::Result<Self> {
+    pub fn install(bindings: [u32; 8]) -> io::Result<Self> {
         let held = |vk| usize::from(unsafe { GetAsyncKeyState(vk as i32) } < 0);
         let mut held_mask = 0;
         for (index, (binding, code)) in BINDINGS.iter().zip(bindings).enumerate() {
@@ -333,9 +333,16 @@ impl Hotkeys {
         }
         // Reconcile missed key-up messages, common when focus changes or input
         // arrives through a remote-control layer.
-        HELD.store(physically_down, Relaxed);
-        CAPTURED.fetch_and(physically_down, Relaxed);
-        ACTIVE.fetch_and(enabled & (physically_down | HOOK_TRACKED_HOLDS), Relaxed);
+        let one_shot = crate::macros::WHIP_NO_SLOW_ENABLED;
+        HELD.store(
+            (HELD.load(Relaxed) & one_shot) | (physically_down & !one_shot),
+            Relaxed,
+        );
+        CAPTURED.fetch_and(physically_down | one_shot, Relaxed);
+        ACTIVE.fetch_and(
+            enabled & (physically_down | HOOK_TRACKED_HOLDS | one_shot),
+            Relaxed,
+        );
         PRESSED.fetch_and(enabled, Relaxed);
         SPACE_DOWN.store(usize::from(unsafe { GetAsyncKeyState(0x20) } < 0), Relaxed);
         LEFT_DOWN.store(unsafe { GetAsyncKeyState(1) } < 0, Relaxed);
