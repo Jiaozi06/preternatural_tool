@@ -5,7 +5,8 @@ use std::time::{Duration, Instant};
 pub const DEFAULT_CHARGE_MS: u32 = 500;
 pub const DEFAULT_WAIT_MS: u32 = 100;
 pub const DEFAULT_RECOVERY_MS: u32 = 420;
-const SLOT_HOLD: Duration = Duration::from_millis(10);
+pub const DEFAULT_DUAL_EQUIP_MS: u32 = 80;
+const SLOT_HOLD: Duration = Duration::from_millis(20);
 const SLOT_SETTLE: Duration = Duration::from_millis(30);
 const SWITCH_STEP: Duration = Duration::from_millis(20);
 
@@ -24,15 +25,17 @@ struct Active {
 
 pub struct DualWhip {
     slots: [u16; 2],
+    equip_delay: Duration,
     charge: Duration,
     wait: Duration,
     stage: Option<Active>,
 }
 
 impl DualWhip {
-    pub fn new(slots: [u32; 2], charge_ms: u32, wait_ms: u32) -> io::Result<Self> {
+    pub fn new(slots: [u32; 2], equip_ms: u32, charge_ms: u32, wait_ms: u32) -> io::Result<Self> {
         Ok(Self {
             slots: [scan(slots[0])?, scan(slots[1])?],
+            equip_delay: Duration::from_millis(equip_ms.into()),
             charge: Duration::from_millis(charge_ms.max(1).into()),
             wait: Duration::from_millis(wait_ms.into()),
             stage: None,
@@ -58,7 +61,7 @@ impl DualWhip {
         match active.step {
             Step::SlotHeld => {
                 send(&[key(self.slots[slot], true)])?;
-                self.advance(slot, Step::Equipping, SLOT_SETTLE);
+                self.advance(slot, Step::Equipping, self.equip_delay);
             }
             Step::Equipping => {
                 send(&[attack(false)])?;

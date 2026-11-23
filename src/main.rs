@@ -24,14 +24,14 @@ use std::sync::mpsc::{self, Receiver};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
-use whip::{DEFAULT_CHARGE_MS, DEFAULT_RECOVERY_MS, DEFAULT_WAIT_MS};
+use whip::{DEFAULT_CHARGE_MS, DEFAULT_DUAL_EQUIP_MS, DEFAULT_RECOVERY_MS, DEFAULT_WAIT_MS};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     MessageBoxW, MB_ICONWARNING, MB_OK, MB_SETFOREGROUND,
 };
 
 const ACCENT: Color32 = Color32::from_rgb(0, 95, 184);
 const WINDOW_TITLE: &str = "绿玩变异工具箱 v1.3 ©️Jiaozi";
-const CURRENT_VERSION: &str = "1.3.4";
+const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const MUTED: Color32 = Color32::from_rgb(82, 86, 94);
 const FIELD_WIDTH: f32 = 136.0;
 const FIELD_HEIGHT: f32 = 28.0;
@@ -128,6 +128,7 @@ struct App {
     whip: Binding,
     whip_enabled: bool,
     whip_slots: [u8; 2],
+    whip_equip_ms: u32,
     whip_charge_ms: u32,
     whip_wait_ms: u32,
     whip_switch: Binding,
@@ -251,6 +252,8 @@ struct SavedSettings {
     flight: SavedFlight,
     #[serde(default)]
     whip: SavedWhip,
+    #[serde(default = "default_whip_equip_ms")]
+    whip_equip_ms: u32,
     #[serde(default = "default_whip_switch")]
     whip_switch: SavedWhip,
     #[serde(default = "default_switch_cooldown_ms")]
@@ -271,6 +274,10 @@ struct SavedSettings {
 
 fn default_switch_cooldown_ms() -> u32 {
     DEFAULT_SWITCH_COOLDOWN_MS
+}
+
+fn default_whip_equip_ms() -> u32 {
+    DEFAULT_DUAL_EQUIP_MS
 }
 
 fn default_overlay_opacity() -> u8 {
@@ -405,6 +412,7 @@ impl App {
             whip: DEFAULT_WHIP,
             whip_enabled: true,
             whip_slots: [1, 2],
+            whip_equip_ms: DEFAULT_DUAL_EQUIP_MS,
             whip_charge_ms: DEFAULT_CHARGE_MS,
             whip_wait_ms: DEFAULT_WAIT_MS,
             whip_switch: DEFAULT_WHIP_SWITCH,
@@ -506,6 +514,7 @@ impl App {
             target_path: self.target_path.clone(),
             whip: self.whip.code,
             whip_slots: self.whip_slots.map(|slot| u32::from(b'0' + slot)),
+            whip_equip_ms: self.whip_equip_ms,
             whip_charge_ms: self.whip_charge_ms,
             whip_wait_ms: self.whip_wait_ms,
             whip_switch: self.whip_switch.code,
@@ -565,6 +574,7 @@ impl App {
             self.whip_slots = whip.slots;
         }
         self.whip_charge_ms = whip.charge_ms.max(1);
+        self.whip_equip_ms = saved.whip_equip_ms;
         self.whip_wait_ms = whip.wait_ms;
         let whip_switch = saved.whip_switch;
         self.whip_switch = restore_binding(
@@ -896,6 +906,13 @@ impl App {
                         slot_field(ui, label, &mut self.whip_slots[index])
                     });
                 }
+                row(ui, "切槽后等待", |ui| {
+                    ui.add_sized(
+                        field_size(),
+                        egui::DragValue::new(&mut self.whip_equip_ms).suffix(" ms"),
+                    )
+                    .on_hover_text("两把鞭子共用此设置。松开数字键后等待，再按住左键蓄力。");
+                });
                 row(ui, "蓄力时间", |ui| {
                     ui.add_sized(
                         field_size(),
@@ -1298,6 +1315,7 @@ impl eframe::App for App {
                 charge_ms: self.whip_charge_ms,
                 wait_ms: self.whip_wait_ms,
             },
+            whip_equip_ms: self.whip_equip_ms,
             whip_switch: SavedWhip {
                 key: self.whip_switch.code,
                 enabled: self.whip_switch_enabled,

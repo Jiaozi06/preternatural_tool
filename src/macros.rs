@@ -45,6 +45,7 @@ pub struct Settings {
     pub target_path: String,
     pub whip: u32,
     pub whip_slots: [u32; 2],
+    pub whip_equip_ms: u32,
     pub whip_charge_ms: u32,
     pub whip_wait_ms: u32,
     pub whip_switch: u32,
@@ -184,6 +185,7 @@ pub fn run(
     )?;
     let mut whip = DualWhip::new(
         settings.whip_slots,
+        settings.whip_equip_ms,
         settings.whip_charge_ms,
         settings.whip_wait_ms,
     )?;
