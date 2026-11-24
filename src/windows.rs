@@ -186,6 +186,10 @@ static SPACE_DOWN: AtomicUsize = AtomicUsize::new(0);
 static LEFT_PRESSED: AtomicBool = AtomicBool::new(false);
 static LEFT_DOWN: AtomicBool = AtomicBool::new(false);
 const OWN_INPUT: usize = 0x57464D;
+pub const VK_F: u32 = 0x46;
+static F_DOWN: AtomicBool = AtomicBool::new(false);
+static F_REPEAT: AtomicBool = AtomicBool::new(false);
+static F_PRESS_ID: AtomicUsize = AtomicUsize::new(0);
 // A consumed hotkey may not appear in the asynchronous key state. These
 // hold actions use the hook's down and up events to decide when to run.
 const HOOK_TRACKED_HOLDS: usize =
@@ -236,12 +240,39 @@ extern "system" fn keyboard_hook(code: i32, message: usize, data: isize) -> isiz
             if event.vk == 0x20 {
                 SPACE_DOWN.store(usize::from(!up), Relaxed);
             }
-            if handle_button(event.vk, up, matches_foreground()) {
+            let foreground = matches_foreground();
+            if event.vk == VK_F && track_f(up, foreground) {
+                return 1;
+            }
+            if handle_button(event.vk, up, foreground) {
                 return 1;
             }
         }
     }
     unsafe { CallNextHookEx(null_mut(), code, message, data) }
+}
+
+fn track_f(up: bool, foreground: bool) -> bool {
+    if up {
+        F_DOWN.store(false, Relaxed);
+        F_REPEAT.store(false, Relaxed);
+        return false;
+    }
+    if F_DOWN.swap(true, Relaxed) {
+        return foreground && F_REPEAT.load(Relaxed);
+    }
+    let enabled = ENABLED.load(Relaxed);
+    let already_bound = BINDINGS.iter().enumerate().any(|(index, binding)| {
+        enabled & (1 << index) != 0 && binding.load(Relaxed) == VK_F as usize
+    });
+    let modified = [0x11, 0x12, 0x5b, 0x5c]
+        .into_iter()
+        .any(|vk| unsafe { GetAsyncKeyState(vk) } < 0);
+    if foreground && enabled & crate::macros::F_REPEAT_ENABLED != 0 && !already_bound && !modified {
+        F_PRESS_ID.fetch_add(1, Relaxed);
+        F_REPEAT.store(true, Relaxed);
+    }
+    false
 }
 
 fn mouse_hook_button(message: usize, data: u32) -> Option<(u32, bool)> {
@@ -294,6 +325,8 @@ impl Hotkeys {
         SPACE_DOWN.store(held(0x20), Relaxed);
         LEFT_PRESSED.store(false, Relaxed);
         LEFT_DOWN.store(held(1) != 0, Relaxed);
+        F_DOWN.store(held(VK_F) != 0, Relaxed);
+        F_REPEAT.store(false, Relaxed);
         ENABLED.store(0, Relaxed);
         TARGET_PID.store(0, Relaxed);
         CAPTURED.store(0, Relaxed);
@@ -333,17 +366,20 @@ impl Hotkeys {
         }
         // Reconcile missed key-up messages, common when focus changes or input
         // arrives through a remote-control layer.
-        let one_shot = crate::macros::WHIP_NO_SLOW_ENABLED;
+        let hook_routed = crate::macros::WHIP_NO_SLOW_ENABLED | crate::macros::PICKUP_ENABLED;
         HELD.store(
-            (HELD.load(Relaxed) & one_shot) | (physically_down & !one_shot),
+            (HELD.load(Relaxed) & hook_routed) | (physically_down & !hook_routed),
             Relaxed,
         );
-        CAPTURED.fetch_and(physically_down | one_shot, Relaxed);
+        CAPTURED.fetch_and(physically_down | hook_routed, Relaxed);
         ACTIVE.fetch_and(
-            enabled & (physically_down | HOOK_TRACKED_HOLDS | one_shot),
+            enabled & (physically_down | HOOK_TRACKED_HOLDS | hook_routed),
             Relaxed,
         );
         PRESSED.fetch_and(enabled, Relaxed);
+        if enabled & crate::macros::F_REPEAT_ENABLED == 0 {
+            F_REPEAT.store(false, Relaxed);
+        }
         SPACE_DOWN.store(usize::from(unsafe { GetAsyncKeyState(0x20) } < 0), Relaxed);
         LEFT_DOWN.store(unsafe { GetAsyncKeyState(1) } < 0, Relaxed);
         ACTIVE.load(Relaxed)
@@ -354,11 +390,20 @@ impl Hotkeys {
     }
 
     pub fn suspend(&self) {
+        F_REPEAT.store(false, Relaxed);
         TARGET_PID.store(0, Relaxed);
         ENABLED.store(0, Relaxed);
         ACTIVE.store(0, Relaxed);
         PRESSED.store(0, Relaxed);
         LEFT_PRESSED.store(false, Relaxed);
+    }
+
+    pub fn f_repeat_press(&self) -> Option<usize> {
+        F_REPEAT.load(Relaxed).then(|| F_PRESS_ID.load(Relaxed))
+    }
+
+    pub fn f_down(&self) -> bool {
+        F_DOWN.load(Relaxed)
     }
 
     pub fn space_down(&self) -> bool {

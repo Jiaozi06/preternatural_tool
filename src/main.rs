@@ -15,8 +15,8 @@ use eframe::egui::{self, Color32, RichText, Stroke};
 use flight::{DEFAULT_JET_DELAY_MS, DEFAULT_SIDE_MS};
 use macros::{
     keyboard_key, Settings, DEFAULT_DELAYS, DEFAULT_PICKUP_INTERVAL_MS, DEFAULT_SWITCH_COOLDOWN_MS,
-    PICKUP_ENABLED, QUICK_ENABLED, SIDE_ENABLED, SPEAR_ENABLED, SPIN_ENABLED, WHIP_ENABLED,
-    WHIP_NO_SLOW_ENABLED, WHIP_SWITCH_ENABLED,
+    F_REPEAT_ENABLED, PICKUP_ENABLED, QUICK_ENABLED, SIDE_ENABLED, SPEAR_ENABLED, SPIN_ENABLED,
+    WHIP_ENABLED, WHIP_NO_SLOW_ENABLED, WHIP_SWITCH_ENABLED,
 };
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -117,6 +117,7 @@ impl Drop for Worker {
 struct App {
     pickup: Binding,
     pickup_enabled: bool,
+    f_repeat_enabled: bool,
     pickup_interval_ms: u32,
     spear: Binding,
     spear_enabled: bool,
@@ -137,6 +138,7 @@ struct App {
     whip_switch_slots: [u8; 2],
     whip_switch_charge_ms: u32,
     whip_switch_recovery_ms: u32,
+    whip_switch_return_ms: u32,
     whip_switch_cooldown_ms: u32,
     quick: Binding,
     quick_enabled: bool,
@@ -245,6 +247,8 @@ struct SavedSettings {
     pickup: u32,
     #[serde(default = "enabled_by_default")]
     pickup_enabled: bool,
+    #[serde(default = "enabled_by_default")]
+    f_repeat_enabled: bool,
     pickup_interval_ms: u32,
     spear: u32,
     #[serde(default = "enabled_by_default")]
@@ -263,6 +267,8 @@ struct SavedSettings {
     whip_equip_ms: u32,
     #[serde(default = "default_whip_switch")]
     whip_switch: SavedWhip,
+    #[serde(default = "default_whip_switch_return_ms")]
+    whip_switch_return_ms: u32,
     #[serde(default = "default_switch_cooldown_ms")]
     whip_switch_cooldown_ms: u32,
     #[serde(default)]
@@ -429,6 +435,10 @@ fn enabled_by_default() -> bool {
     true
 }
 
+fn default_whip_switch_return_ms() -> u32 {
+    20
+}
+
 impl App {
     fn new(ctx: &egui::Context) -> Self {
         setup_style(ctx);
@@ -436,6 +446,7 @@ impl App {
         Self {
             pickup: Binding::new(u32::from(b'G'), "G"),
             pickup_enabled: true,
+            f_repeat_enabled: true,
             pickup_interval_ms: DEFAULT_PICKUP_INTERVAL_MS,
             spear: Binding::new(u32::from(b'H'), "H"),
             spear_enabled: true,
@@ -456,6 +467,7 @@ impl App {
             whip_switch_slots: [1, 2],
             whip_switch_charge_ms: DEFAULT_CHARGE_MS,
             whip_switch_recovery_ms: DEFAULT_RECOVERY_MS,
+            whip_switch_return_ms: default_whip_switch_return_ms(),
             whip_switch_cooldown_ms: DEFAULT_SWITCH_COOLDOWN_MS,
             quick: DEFAULT_QUICK,
             quick_enabled: true,
@@ -563,6 +575,7 @@ impl App {
             whip_switch_slots: self.whip_switch_slots.map(|slot| u32::from(b'0' + slot)),
             whip_switch_charge_ms: self.whip_switch_charge_ms,
             whip_switch_recovery_ms: self.whip_switch_recovery_ms,
+            whip_switch_return_ms: self.whip_switch_return_ms,
             whip_switch_cooldown_ms: self.whip_switch_cooldown_ms,
             spin: self.spin.code,
             spin_pixels: self.spin_pixels,
@@ -598,6 +611,7 @@ impl App {
         self.delays[4] = self.delays[4].max(20);
         self.spear_cooldown_ms = saved.spear_cooldown_ms;
         self.pickup_enabled = saved.pickup_enabled;
+        self.f_repeat_enabled = saved.f_repeat_enabled;
         self.spear_enabled = saved.spear_enabled;
         let flight = saved.flight;
         let existing = [self.pickup.code, self.spear.code];
@@ -641,6 +655,7 @@ impl App {
         }
         self.whip_switch_charge_ms = whip_switch.charge_ms.max(1);
         self.whip_switch_recovery_ms = whip_switch.wait_ms;
+        self.whip_switch_return_ms = saved.whip_switch_return_ms;
         self.whip_switch_cooldown_ms = saved.whip_switch_cooldown_ms;
         let spin = saved.spin;
         self.spin = restore_binding(
@@ -700,6 +715,7 @@ impl App {
 
     fn enabled_mask(&self) -> usize {
         (usize::from(self.pickup_enabled) * PICKUP_ENABLED)
+            | (usize::from(self.f_repeat_enabled) * F_REPEAT_ENABLED)
             | (usize::from(self.spear_enabled) * SPEAR_ENABLED)
             | (usize::from(self.quick_enabled) * QUICK_ENABLED)
             | (usize::from(self.side_enabled) * SIDE_ENABLED)
@@ -1074,6 +1090,13 @@ impl App {
                         egui::DragValue::new(&mut self.whip_switch_recovery_ms).suffix(" ms"),
                     );
                 });
+                row(ui, "切换位到切回间隔", |ui| {
+                    ui.add_sized(
+                        field_size(),
+                        egui::DragValue::new(&mut self.whip_switch_return_ms).suffix(" ms"),
+                    )
+                    .on_hover_text("从松开切换位数字键开始，到按下武器位数字键为止。");
+                });
                 row(ui, "切回武器后冷却", |ui| {
                     ui.add_sized(
                         field_size(),
@@ -1408,6 +1431,7 @@ impl eframe::App for App {
         let settings = SavedSettings {
             pickup: self.pickup.code,
             pickup_enabled: self.pickup_enabled,
+            f_repeat_enabled: self.f_repeat_enabled,
             pickup_interval_ms: self.pickup_interval_ms,
             spear: self.spear.code,
             spear_enabled: self.spear_enabled,
@@ -1446,6 +1470,7 @@ impl eframe::App for App {
                 wait_ms: self.whip_switch_recovery_ms,
             },
             whip_switch_cooldown_ms: self.whip_switch_cooldown_ms,
+            whip_switch_return_ms: self.whip_switch_return_ms,
             spin: SavedSpin {
                 key: self.spin.code,
                 enabled: self.spin_enabled,
@@ -1626,7 +1651,7 @@ impl eframe::App for App {
                                     return;
                                 }
                                 ui.label(
-                                    RichText::new("滚轮下与 F 连发，下一次只按一次 F。")
+                                    RichText::new("按住拾取热键，连续发送滚轮下与 F。")
                                         .color(MUTED),
                                 );
                                 ui.add_space(4.0);
@@ -1643,6 +1668,16 @@ impl eframe::App for App {
                                         );
                                     });
                                 });
+                            });
+                            ui.add_space(12.0);
+                            card(ui, |ui| {
+                                feature_header(ui, "长按 F 连点", &mut self.f_repeat_enabled);
+                                if self.f_repeat_enabled {
+                                    ui.colored_label(
+                                        MUTED,
+                                        "单击 F 照常，按住 250 ms 后开始连点。",
+                                    );
+                                }
                             });
                         });
                     });
@@ -1974,7 +2009,10 @@ mod tests {
         assert_eq!((reopened.weapon, reopened.swap), (7, 4));
         assert_eq!(reopened.pickup_interval_ms, 13);
         assert_eq!(reopened.delays, [2, 300, 20, 4, 20]);
-        assert_eq!(reopened.enabled_mask(), SPEAR_ENABLED | SIDE_ENABLED);
+        assert_eq!(
+            reopened.enabled_mask(),
+            SPEAR_ENABLED | SIDE_ENABLED | F_REPEAT_ENABLED
+        );
         assert_eq!(reopened.quick.label, "F10");
         assert_eq!(reopened.jet_slot, 5);
         assert_eq!(reopened.jet_delay_ms, 75);

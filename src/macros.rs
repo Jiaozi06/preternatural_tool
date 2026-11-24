@@ -1,7 +1,7 @@
 use crate::flight::{QuickFlight, SideFlight};
 use crate::processes::{self, ForegroundTarget};
 use crate::whip::{DualWhip, WhipNoSlow, WhipSwitch};
-use crate::windows::{key, mouse_button, mouse_move, scan, send, wheel_down, Hotkeys, Input};
+use crate::windows::{key, mouse_button, mouse_move, scan, send, wheel_down, Hotkeys, Input, VK_F};
 use std::io;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread;
@@ -9,6 +9,8 @@ use std::time::{Duration, Instant};
 
 const PICKUP_HOLD: Duration = Duration::from_millis(1);
 const POLL_INTERVAL: Duration = Duration::from_millis(1);
+const F_REPEAT_DELAY: Duration = Duration::from_millis(250);
+const F_REPEAT_INTERVAL: Duration = Duration::from_millis(25);
 
 pub const DEFAULT_PICKUP_INTERVAL_MS: u32 = 2;
 pub const DEFAULT_DELAYS: [u32; 5] = [1, 420, 20, 10, 20];
@@ -21,6 +23,7 @@ pub const WHIP_ENABLED: usize = 16;
 pub const WHIP_SWITCH_ENABLED: usize = 32;
 pub const SPIN_ENABLED: usize = 64;
 pub const WHIP_NO_SLOW_ENABLED: usize = 128;
+pub const F_REPEAT_ENABLED: usize = 256;
 
 pub struct Settings {
     pub pickup: u32,
@@ -57,6 +60,7 @@ pub struct Settings {
     pub whip_switch_slots: [u32; 2],
     pub whip_switch_charge_ms: u32,
     pub whip_switch_recovery_ms: u32,
+    pub whip_switch_return_ms: u32,
     pub whip_switch_cooldown_ms: u32,
 }
 
@@ -180,7 +184,7 @@ pub fn run(
     cooldown: &AtomicUsize,
     ready: impl FnOnce(),
 ) -> io::Result<()> {
-    let f = scan(0x46)?;
+    let f = scan(VK_F)?;
     let pickup_interval = Duration::from_millis(u64::from(settings.pickup_interval_ms));
     let mut spear = Spear::new(&settings)?;
     let mut quick = QuickFlight::new(
@@ -199,6 +203,7 @@ pub fn run(
         settings.whip_switch_slots[1],
         settings.whip_switch_charge_ms,
         settings.whip_switch_recovery_ms,
+        settings.whip_switch_return_ms,
         settings.whip_switch_cooldown_ms,
     )?;
     let mut side = SideFlight::new(settings.side_random_max_ms)?;
@@ -219,8 +224,7 @@ pub fn run(
     ])?;
     let mut focus = ForegroundTarget::new(settings.target_path);
     let mut previous = 0;
-    let mut scroll_next = true;
-    let mut repeating = false;
+    let mut f_repeat = None;
     let mut side_toggled = false;
     let mut quick_started_at = None;
     let mut next_pickup = Instant::now();
@@ -239,7 +243,7 @@ pub fn run(
             hotkeys.suspend();
         }
         let (enabled, down) = if focused { (enabled, down) } else { (0, 0) };
-        let pressed = (down & !previous) | hotkeys.take_pressed();
+        let pressed = ((down & !previous) | hotkeys.take_pressed()) & enabled;
         previous = down;
         let left_pressed = hotkeys.take_left_press();
         let left_down = hotkeys.left_down();
@@ -353,13 +357,30 @@ pub fn run(
         }
 
         let now = Instant::now();
-        if pressed & PICKUP_ENABLED != 0 {
-            repeating = scroll_next;
-            scroll_next = !scroll_next;
-            pickup(f, repeating)?;
-            next_pickup = now + pickup_interval;
-        } else if down & PICKUP_ENABLED != 0 && repeating && now >= next_pickup {
-            pickup(f, true)?;
+        match hotkeys
+            .f_repeat_press()
+            .filter(|_| enabled & F_REPEAT_ENABLED != 0)
+        {
+            Some(id) => match f_repeat {
+                Some((previous_id, due, first)) if previous_id == id => {
+                    if now >= due {
+                        if first {
+                            send(&[key(f, true)])?;
+                        }
+                        pickup(f, false)?;
+                        f_repeat = Some((id, now + F_REPEAT_INTERVAL, false));
+                    }
+                }
+                _ => f_repeat = Some((id, now + F_REPEAT_DELAY, true)),
+            },
+            None => f_repeat = None,
+        }
+        if pressed & PICKUP_ENABLED != 0 || (down & PICKUP_ENABLED != 0 && now >= next_pickup) {
+            if hotkeys.f_down() {
+                send(&[wheel_down()])?;
+            } else {
+                pickup(f, true)?;
+            }
             next_pickup = now + pickup_interval;
         }
 
@@ -368,7 +389,7 @@ pub fn run(
         if let Some((_, due)) = spear.next {
             delay = delay.min(due.saturating_duration_since(now));
         }
-        if down & PICKUP_ENABLED != 0 && repeating {
+        if down & PICKUP_ENABLED != 0 {
             delay = delay.min(next_pickup.saturating_duration_since(now));
         }
         if !delay.is_zero() {

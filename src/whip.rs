@@ -123,6 +123,7 @@ impl WhipSwitch {
         item: u32,
         charge_ms: u32,
         recovery_ms: u32,
+        return_ms: u32,
         cooldown_ms: u32,
     ) -> io::Result<Self> {
         let weapon = scan(weapon)?;
@@ -140,7 +141,7 @@ impl WhipSwitch {
                 Duration::from_millis(charge_ms.max(1).into()),
                 Duration::from_millis(recovery_ms.into()),
                 SWITCH_STEP,
-                SWITCH_STEP,
+                Duration::from_millis(return_ms.into()),
                 SWITCH_STEP,
                 SLOT_SETTLE,
             ],
